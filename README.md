@@ -15,7 +15,7 @@ Non aprire lo zip: si carica così com'è.
 - **È solo un aiuto per preparare una bozza.** easybordero non si collega e non controlla nulla sul portale dove compili i borderò, né su altri sistemi.
 - **Il file può contenere errori**: titoli, interpreti o brani sbagliati o mancanti.
 - **Il controllo spetta a te.** Prima di inviare il borderò devi verificare ogni brano. La compilazione e l'invio restano sotto la tua esclusiva responsabilità.
-- **Nessuna garanzia.** Lo strumento è gratuito e fornito così com'è. Marco Olivari ed easybordero non rispondono del contenuto dei borderò compilati con questo strumento, né di alcuna conseguenza del loro invio.
+- **Nessuna garanzia.** Lo strumento è gratuito e fornito così com'è. Marco Olivari ed easybordero non hanno alcuna responsabilità né su come funziona lo strumento né su come verranno compilati i borderò, né su alcuna conseguenza del loro invio.
 - **I tuoi dati non passano da noi.** Il file della serata lo carichi su Claude o su ChatGPT, che sono servizi di terzi con le loro condizioni d'uso.
 
 Usando easybordero accetti queste condizioni.
@@ -39,6 +39,8 @@ Usando easybordero accetti queste condizioni.
 3. Apri **Personalizza**, poi **Skill**. Premi **+**, poi **Crea skill**, poi **Carica una skill**.
 4. Scegli il file `easybordero.zip` che hai scaricato. Fatto.
 
+Se ti blocchi, chiedi aiuto a Claude stesso: incollagli il link di questa pagina e chiedigli di guidarti nell'installazione.
+
 **Uso**
 
 1. Apri una nuova chat.
@@ -57,6 +59,8 @@ Usando easybordero accetti queste condizioni.
 2. Apri **Plugin**, poi la scheda **Skill**.
 3. Premi **Aggiungi**, poi **Carica skill**.
 4. Scegli il file `easybordero.zip` che hai scaricato. Fatto.
+
+Se ti blocchi, chiedi aiuto a ChatGPT stesso: incollagli il link di questa pagina e chiedigli di guidarti nell'installazione.
 
 **Uso**
 
