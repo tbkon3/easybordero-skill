@@ -60,7 +60,7 @@ Usa la data della serata, che spesso è nel nome del file. Se lo script segnala 
 Dai il file da scaricare con queste righe:
 - quanti brani contiene;
 - sul portale dei borderò: crea la setlist, carica il CSV, controlla che i brani siano riconosciuti, associa la setlist al borderò e invia;
-- se il portale rifiuta il file, posso rifarlo con la virgola come separatore (`--separatore ","`);
+- se il portale non riconosce le colonne, posso rifarlo con il punto e virgola come separatore (`--separatore ";"`);
 - sempre, con queste parole: «Attenzione: questo file è una bozza preparata automaticamente e non è stato verificato su nessun portale. Prima di inviare il borderò controlla ogni brano: la responsabilità della compilazione è tua.»
 
 Solo se il DJ dice che la setlist è «a durata effettiva» (jazz, classica, danza, musica nei parchi), aggiungi `--durata-effettiva`.

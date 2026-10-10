@@ -545,7 +545,7 @@ def main():
     p2.add_argument("bozza")
     p2.add_argument("--out", default="setlist.csv")
     p2.add_argument("--durata-effettiva", action="store_true")
-    p2.add_argument("--separatore", default=";", choices=[";", ","])
+    p2.add_argument("--separatore", default=",", choices=[",", ";"])
     a = ap.parse_args()
     if a.cmd == "prepara":
         bozza, info = prepara(Path(a.file))

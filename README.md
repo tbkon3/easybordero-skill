@@ -95,8 +95,8 @@ No. Non si collega a nessun portale e non verifica nulla: usa solo le sue conosc
 **Gli accenti si vedono strani quando apro il file.**
 Non serve aprirlo: caricalo direttamente sul portale. Il file è corretto anche se un programma lo mostra male.
 
-**Il portale rifiuta il file.**
-Scrivi all'assistente: **Rifallo con la virgola come separatore**.
+**Il portale non riconosce le colonne** (in ogni menu vedi tutta l'intestazione insieme).
+Scrivi all'assistente: **Rifallo con il punto e virgola come separatore**.
 
 **Autore e compositore sono vuoti.**
 L'assistente non li inventa. Se il portale li chiede, aggiungili tu.
