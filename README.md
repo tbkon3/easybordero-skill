@@ -38,6 +38,7 @@ Usando easybordero accetti queste condizioni.
 2. Apri **Impostazioni**, poi **Funzionalità**, e attiva **Esecuzione del codice e creazione di file**.
 3. Apri **Personalizza**, poi **Skill**. Premi **+**, poi **Crea skill**, poi **Carica una skill**.
 4. Scegli il file `easybordero.zip` che hai scaricato. Fatto.
+5. **Facoltativo, se vuoi anche autori e compositori.** Torna in **Impostazioni**, **Funzionalità**. Sotto **Elenco domini consentiti**, nel campo **Domini aggiuntivi consentiti** scrivi `musicbrainz.org` e premi **Aggiungi**. Vale subito, anche nella chat già aperta.
 
 Se ti blocchi, chiedi aiuto a Claude stesso: incollagli il link di questa pagina e chiedigli di guidarti nell'installazione.
 
@@ -98,8 +99,11 @@ Non serve aprirlo: caricalo direttamente sul portale. Il file è corretto anche 
 **Il portale non riconosce le colonne** (in ogni menu vedi tutta l'intestazione insieme).
 Scrivi all'assistente: **Rifallo con il punto e virgola come separatore**.
 
-**Autore e compositore sono vuoti.**
-L'assistente non li inventa. Se il portale li chiede, aggiungili tu.
+**Posso avere anche autori e compositori?**
+All'inizio l'assistente ti chiede se vuoi solo gli interpreti o anche autori e compositori. Se li vuoi, li cerca sul sito pubblico [MusicBrainz](https://musicbrainz.org), un brano per volta: ci vogliono circa 6 secondi a brano, quindi 10-15 minuti per una serata intera. Prima di cominciare l'assistente ti dice la stima per la tua serata. Li trova per circa un brano su quattro, molto meno spesso per la musica italiana, e a volte con il nome d'arte invece di quello vero: controllali. Dove non li trova, restano vuoti: l'assistente non li inventa.
+
+**L'assistente dice che non riesce a collegarsi a MusicBrainz.**
+In quel caso il file avrà solo gli interpreti. ChatGPT non può collegarsi a siti esterni. Con Claude, aggiungi `musicbrainz.org` tra i domini consentiti (punto 5 dell'installazione) e poi chiedi di rifarlo.
 
 ---
 

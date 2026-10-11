@@ -11,17 +11,26 @@ services/import_service.py, parsers/*), con alcune correzioni:
     tonalità Camelot in testa vengono tolti;
   - "!" e "$" restano: fanno parte di titoli e nomi veri (FE!N, A$AP Ferg).
 
-Due comandi:
+Comandi:
   python setlist.py prepara <file_export>      -> bozza.tsv, una riga per opera
+  python setlist.py autori bozza.tsv           -> (facoltativo) autori e compositori da MusicBrainz
+  python setlist.py rete                       -> MusicBrainz è raggiungibile da qui?
   python setlist.py csv bozza.tsv --out setlist.csv [--durata-effettiva]
 
-Solo libreria standard; per i file .xlsx serve openpyxl.
+Solo libreria standard; per i file .xlsx serve openpyxl. "autori" ha bisogno
+di poter raggiungere musicbrainz.org: se non può, lo dice e non tocca la bozza.
 """
 import argparse
 import csv
 import io
+import json
 import re
 import sys
+import time
+import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -533,6 +542,174 @@ def scrivi_csv(bozza_path: Path, out: Path, durata_effettiva: bool, separatore: 
     return [f"Scritto {out} con {len(unici)} brani."] + avvisi
 
 
+# ---------------------------------------------------------------------------
+# Autori e compositori da MusicBrainz (facoltativo)
+# ---------------------------------------------------------------------------
+
+MB_API = "https://musicbrainz.org/ws/2/"
+MB_UA = "easybordero-skill/1.1 ( https://github.com/tbkon3/easybordero-skill )"
+MB_PAUSA = 1.1          # MusicBrainz accetta una richiesta al secondo
+MB_VERSIONI = 4         # versioni del brano da guardare prima di arrendersi
+MB_NOTA = "autori da MusicBrainz, da controllare"
+MB_SECONDI_A_BRANO = 6  # media misurata 5,7 s su 495 brani di 5 serate vere (11/10/2026)
+_mb_ultima = [0.0]
+
+
+class MBNonRaggiungibile(Exception):
+    """Nessuna strada verso musicbrainz.org (rete chiusa, proxy che rifiuta)."""
+
+
+class MBNonRisponde(Exception):
+    """MusicBrainz raggiunto ma lento o sovraccarico: vale la pena riprovare."""
+
+
+def _mb_get(path: str, _timeout: int = 30, _tentativi: int = 3, **params) -> dict:
+    params["fmt"] = "json"
+    url = MB_API + path + "?" + urllib.parse.urlencode(params)
+    motivo = ""
+    for tentativo in range(_tentativi):
+        attesa = MB_PAUSA - (time.time() - _mb_ultima[0])
+        if attesa > 0:
+            time.sleep(attesa)
+        _mb_ultima[0] = time.time()
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": MB_UA, "Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=_timeout) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return {}
+            if e.code in (429, 500, 502, 503, 504):     # sovraccarico: aspetta e riprova
+                motivo = f"HTTP {e.code}"
+                time.sleep(3 + 3 * tentativo)
+                continue
+            raise MBNonRaggiungibile(f"HTTP {e.code}")
+        except (TimeoutError, urllib.error.URLError, OSError) as e:
+            reason = getattr(e, "reason", e)
+            if isinstance(reason, TimeoutError) or isinstance(e, TimeoutError):
+                motivo = "tempo scaduto"
+                continue
+            raise MBNonRaggiungibile(str(reason))
+        except ValueError:                              # risposta non JSON
+            motivo = "risposta illeggibile"
+            time.sleep(3)
+    raise MBNonRisponde(motivo)
+
+
+def _mb_norm(s: str) -> str:
+    return re.sub(r"[^0-9a-z]+", " ", unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore")
+                  .decode().lower()).strip()
+
+
+def _mb_lucene(s: str) -> str:
+    return re.sub(r'([+\-&|!(){}\[\]^"~*?:\\/])', r"\\\1", s)
+
+
+def mb_autori(titolo: str, performer: str) -> tuple[list[str], list[str]] | None:
+    """(autori, compositori) dell'opera, oppure None se non trovata."""
+    artista = split_multi_artist(performer)[0] if performer else ""
+    if not titolo or not artista:
+        return None
+    q = f'recording:"{_mb_lucene(titolo)}" AND artist:"{_mb_lucene(artista)}"'
+    t, a = _mb_norm(titolo), _mb_norm(artista)
+    candidati = []
+    for rec in _mb_get("recording", query=q, limit=15).get("recordings", []):
+        rt = _mb_norm(rec.get("title"))
+        crediti = _mb_norm(" ".join(c.get("name", "") for c in rec.get("artist-credit", [])))
+        if int(rec.get("score", 0)) >= 90 and (rt == t or rt.startswith(t + " ")) and a in crediti:
+            candidati.append(rec["id"])
+    for rid in candidati[:MB_VERSIONI]:
+        det = _mb_get("recording/" + rid, inc="work-rels work-level-rels artist-rels")
+        for rel in det.get("relations", []):
+            opera = rel.get("work")
+            if rel.get("type") != "performance" or not opera:
+                continue
+            ruoli = {"lyricist": [], "composer": [], "writer": []}
+            for ar in opera.get("relations", []):
+                # MusicBrainz scrive "Boi‐1da" con il trattino tipografico U+2010.
+                nome = re.sub("[‐‑]", "-", (ar.get("artist") or {}).get("name") or "")
+                if ar.get("type") in ruoli and nome and nome not in ruoli[ar["type"]]:
+                    ruoli[ar["type"]].append(nome)
+            # "writer" non dice se testo o musica: va in entrambe le colonne.
+            autori = ruoli["lyricist"] or ruoli["writer"]
+            compositori = ruoli["composer"] or ruoli["writer"]
+            if autori or compositori:
+                return autori, compositori
+    return None
+
+
+def mb_stato() -> str:
+    """Una sola richiesta di prova, per sapere prima se la ricerca degli autori è possibile."""
+    try:
+        _mb_get("recording", _timeout=10, _tentativi=1, query='recording:"Macarena"', limit=1)
+        return "raggiungibile"
+    except MBNonRaggiungibile as e:
+        return f"NON RAGGIUNGIBILE ({e})"
+    except MBNonRisponde as e:
+        return f"raggiungibile ma lento in questo momento ({e})"
+
+
+def stime(n_brani: int) -> tuple[int, int]:
+    """Minuti stimati: (solo interpreti, ricerca autori in più)."""
+    solo = max(2, round(1 + n_brani / 60))
+    autori = max(1, round(n_brani * MB_SECONDI_A_BRANO / 60))
+    return solo, autori
+
+
+def cerca_autori(bozza_path: Path, secondi: int) -> list[str]:
+    """Riempie autore e compositore nella bozza. Riprende da dove si era fermato."""
+    with open(bozza_path, encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f, delimiter="\t"))
+    fatti_path = bozza_path.with_name(bozza_path.stem + "_autori_cercati.txt")
+    fatti = set(fatti_path.read_text(encoding="utf-8").splitlines()) if fatti_path.exists() else set()
+    chiave = lambda r: f"{r['titolo']}|{r.get('performer', '')}"
+    da_fare = [r for r in rows
+               if (r.get("titolo") or "").strip() and not (r.get("autore") or r.get("compositore"))
+               and chiave(r) not in fatti]
+    inizio, trovati, cercati, saltati, di_fila = time.time(), 0, 0, 0, 0
+    fermo = ""
+    try:
+        for r in da_fare:
+            if time.time() - inizio > secondi:
+                break
+            try:
+                esito = mb_autori(r["titolo"].strip(), (r.get("performer") or "").strip())
+                di_fila = 0
+            except MBNonRisponde as e:
+                esito, saltati, di_fila = None, saltati + 1, di_fila + 1
+                if di_fila >= 3:
+                    cercati += 1
+                    fatti.add(chiave(r))
+                    fermo = f"MUSICBRAINZ NON RISPONDE ({e}): fermo. Riprova fra qualche minuto, oppure continua senza autori."
+                    break
+            cercati += 1
+            fatti.add(chiave(r))
+            if esito:
+                trovati += 1
+                r["autore"], r["compositore"] = " / ".join(esito[0]), " / ".join(esito[1])
+                r["controlla"] = "; ".join(x for x in ((r.get("controlla") or ""), MB_NOTA) if x)
+    except MBNonRaggiungibile as e:
+        if not cercati:
+            return [f"MUSICBRAINZ NON RAGGIUNGIBILE ({e}). Nessuna modifica alla bozza."]
+        fermo = f"MUSICBRAINZ NON PIU' RAGGIUNGIBILE ({e}): fermo. Quello che ho trovato è salvato."
+    finally:
+        if cercati:
+            scrivi_bozza(rows, bozza_path)
+            fatti_path.write_text("\n".join(sorted(fatti)), encoding="utf-8")
+    out = [f"Cercati {cercati} brani, autori trovati per {trovati}"
+           + (f", {saltati} saltati perché MusicBrainz non rispondeva" if saltati else "")
+           + f". Bozza aggiornata: {bozza_path}"]
+    restano = len(da_fare) - cercati
+    if fermo:
+        out.append(fermo)
+    if restano:
+        out.append(f"RESTANO {restano} brani: rilancia lo stesso comando per continuare.")
+    else:
+        con = sum(1 for r in rows if r.get("autore") or r.get("compositore"))
+        out.append(f"FINITO: {con} brani su {len(rows)} hanno autori o compositori.")
+    return out
+
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -546,12 +723,26 @@ def main():
     p2.add_argument("--out", default="setlist.csv")
     p2.add_argument("--durata-effettiva", action="store_true")
     p2.add_argument("--separatore", default=",", choices=[",", ";"])
+    p3 = sub.add_parser("autori", help="cerca autori e compositori su MusicBrainz")
+    p3.add_argument("bozza")
+    p3.add_argument("--secondi", type=int, default=240, help="tempo massimo per volta")
+    sub.add_parser("rete", help="controlla se MusicBrainz è raggiungibile")
     a = ap.parse_args()
-    if a.cmd == "prepara":
+    if a.cmd == "rete":
+        print(f"MusicBrainz: {mb_stato()}.")
+    elif a.cmd == "autori":
+        for line in cerca_autori(Path(a.bozza), a.secondi):
+            print(line)
+    elif a.cmd == "prepara":
         bozza, info = prepara(Path(a.file))
         scrivi_bozza(bozza, Path(a.out))
         print(f"{info['file']} ({info['formato']}): {info['righe']} righe, {len(bozza)} opere in bozza, "
               f"{info['mashup']} mashup divisi, {len(info['doppioni'])} doppioni tolti.")
+        solo, autori = stime(len(bozza))
+        print(f"STIMA solo interpreti: circa {solo} minuti.")
+        print(f"STIMA anche autori e compositori: circa {solo + autori} minuti in tutto "
+              f"({autori} per la ricerca su MusicBrainz, servizio esterno).")
+        print(f"MusicBrainz: {mb_stato()}.")
         print(f"Bozza: {a.out}\n")
         print(Path(a.out).read_text(encoding="utf-8"))
     else:
