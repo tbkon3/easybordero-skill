@@ -57,15 +57,19 @@ Se ti blocchi, chiedi aiuto a Claude stesso: incollagli il link di questa pagina
 **Installazione (una volta sola)**
 
 1. Vai su [chatgpt.com](https://chatgpt.com) ed entra con il tuo account.
-2. Apri **Plugin**, poi la scheda **Skill**.
-3. Premi **Aggiungi**, poi **Carica skill**.
+2. Nella barra a sinistra apri **Plugin**, poi **Skill**.
+3. Premi **Aggiungi**, poi **Carica dal computer**.
 4. Scegli il file `easybordero.zip` che hai scaricato. Fatto.
 
 Se ti blocchi, chiedi aiuto a ChatGPT stesso: incollagli il link di questa pagina e chiedigli di guidarti nell'installazione.
 
 **Uso**
 
-Come con Claude: nuova chat, allega il file, scrivi **Preparami il borderò di questa serata**, rispondi alle domande e scarica il file.
+1. Apri una nuova conversazione e, in alto, passa da **Chat** a **Work**. È indispensabile: in modalità Chat ChatGPT non usa easybordero e prepara un file diverso, non adatto al portale e senza gli avvisi.
+2. Allega il file della serata con il **+**.
+3. Scrivi: **Preparami il borderò di questa serata**
+4. Rispondi alle domande toccando le risposte, senza aspettare troppo: alcune hanno un conto alla rovescia.
+5. Scarica il file `.csv`.
 
 ---
 
@@ -103,7 +107,7 @@ Scrivi all'assistente: **Rifallo con il punto e virgola come separatore**.
 All'inizio l'assistente ti chiede se vuoi solo gli interpreti o anche autori e compositori. Se li vuoi, li cerca sul sito pubblico [MusicBrainz](https://musicbrainz.org), un brano per volta: ci vogliono circa 6 secondi a brano, quindi 10-15 minuti per una serata intera. Prima di cominciare l'assistente ti dice la stima per la tua serata. Li trova per circa un brano su quattro, molto meno spesso per la musica italiana, e a volte con il nome d'arte invece di quello vero: controllali. Dove non li trova, restano vuoti: l'assistente non li inventa.
 
 **L'assistente dice che non riesce a collegarsi a MusicBrainz.**
-In quel caso il file avrà solo gli interpreti. ChatGPT non può collegarsi a siti esterni. Con Claude, aggiungi `musicbrainz.org` tra i domini consentiti (punto 5 dell'installazione) e poi chiedi di rifarlo.
+In quel caso il file avrà solo gli interpreti. ChatGPT al momento blocca il collegamento: se ti propone la ricerca degli autori, scegli **Solo interpreti**. Con Claude, aggiungi `musicbrainz.org` tra i domini consentiti (punto 5 dell'installazione) e poi chiedi di rifarlo.
 
 ---
 
