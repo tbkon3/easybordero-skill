@@ -15,6 +15,7 @@ Comandi:
   python setlist.py prepara <file_export>      -> bozza.tsv, una riga per opera
   python setlist.py autori bozza.tsv           -> (facoltativo) autori e compositori da MusicBrainz
   python setlist.py rete                       -> MusicBrainz è raggiungibile da qui?
+  python setlist.py storico bozza.tsv --memoria <file>  -> salva le decisioni per le serate dopo
   python setlist.py csv bozza.tsv --out setlist.csv [--durata-effettiva]
 
 Solo libreria standard; per i file .xlsx serve openpyxl. "autori" ha bisogno
@@ -24,6 +25,8 @@ import argparse
 import csv
 import io
 import json
+import os
+import platform
 import re
 import sys
 import time
@@ -449,20 +452,44 @@ def _mmss(sec):
     return f"{sec // 60}:{sec % 60:02d}" if sec else ""
 
 
-def prepara(path: Path) -> tuple[list[dict], dict]:
+def prepara(path: Path, memoria: dict | None = None) -> tuple[list[dict], dict]:
     fmt, rows = read_export(path)
-    bozza, seen, by_title = [], set(), {}
-    info = {"file": path.name, "formato": fmt, "righe": len(rows), "doppioni": [], "mashup": 0}
+    bozza, seen, by_title, gia_storico = [], set(), {}, set()
+    info = {"file": path.name, "formato": fmt, "righe": len(rows), "doppioni": [], "mashup": 0,
+            "storico": 0, "storico_tolti": [], "origine": []}
     for n, r in enumerate(rows, start=1):
         raw_t, raw_a = r["titolo"], r["artista"]
         if not raw_a and re.search(r"\.(mp3|wav|aiff?|flac|m4a)$", raw_t, re.I):
             raw_t, raw_a = title_artist_from_path(raw_t)
+        chiave = chiave_storico(raw_t, raw_a)
+        if memoria and chiave in memoria:
+            if chiave in gia_storico:
+                info["doppioni"].append(f"riga {n} {raw_t}")
+                continue
+            gia_storico.add(chiave)
+            voci = memoria[chiave]
+            if voci[0]["stato"] == "tolto":
+                info["storico_tolti"].append(raw_t)
+                continue
+            info["storico"] += 1
+            info["origine"].append({"riga": n, "titolo_file": raw_t, "artista_file": raw_a, "parti": len(voci)})
+            for k, v in enumerate(voci, start=1):
+                by_title.setdefault(v["titolo"].upper(), n)
+                bozza.append({
+                    "n": f"{n}" if len(voci) == 1 else f"{n}.{k}",
+                    "titolo": v["titolo"], "performer": v["performer"],
+                    "autore": v["autore"], "compositore": v["compositore"],
+                    "durata": _mmss(r["durata_sec"]),
+                    "controlla": STORICO_NOTA + (f" ({STORICO_AUTORI})" if v["autori_cercati"] == "si" else ""),
+                })
+            continue
         performer = _MAIN_ARTIST_SPLIT.split(raw_a.strip())[0].strip() if raw_a else ""
         note = []
         if r["durata_sec"] and r["durata_sec"] > LONG_MIX_SECONDS:
             note.append(f"dura {_mmss(r['durata_sec'])}: DJ mix intero?")
         if _NOT_MUSIC_HINT.search(raw_t) and len(clean_title(raw_t)) < 25:
             note.append("forse non è un brano")
+        prima = len(bozza)
         parts = split_mashup_title(raw_t)
         if len(parts) > 1:
             info["mashup"] += 1
@@ -497,6 +524,9 @@ def prepara(path: Path) -> tuple[list[dict], dict]:
                 "durata": _mmss(r["durata_sec"]),
                 "controlla": "; ".join(nota),
             })
+        if len(bozza) > prima:
+            info["origine"].append({"riga": n, "titolo_file": raw_t, "artista_file": raw_a,
+                                    "parti": len(bozza) - prima})
     return bozza, info
 
 
@@ -575,6 +605,9 @@ def _mb_get(path: str, _timeout: int = 30, _tentativi: int = 3, **params) -> dic
         try:
             req = urllib.request.Request(url, headers={"User-Agent": MB_UA, "Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=_timeout) as r:
+                # Il filtro di rete di ChatGPT risponde 200 con una pagina HTML.
+                if "json" not in r.headers.get_content_type():
+                    raise MBNonRaggiungibile(f"il sito è bloccato ({r.headers.get_content_type()})")
                 return json.load(r)
         except urllib.error.HTTPError as e:
             if e.code == 404:
@@ -649,10 +682,11 @@ def mb_stato() -> str:
         return f"raggiungibile ma lento in questo momento ({e})"
 
 
-def stime(n_brani: int) -> tuple[int, int]:
+def stime(n_brani: int, n_cerca: int | None = None) -> tuple[int, int]:
     """Minuti stimati: (solo interpreti, ricerca autori in più)."""
+    n_cerca = n_brani if n_cerca is None else n_cerca
     solo = max(2, round(1 + n_brani / 60))
-    autori = max(1, round(n_brani * MB_SECONDI_A_BRANO / 60))
+    autori = max(1 if n_cerca else 0, round(n_cerca * MB_SECONDI_A_BRANO / 60))
     return solo, autori
 
 
@@ -662,10 +696,12 @@ def cerca_autori(bozza_path: Path, secondi: int) -> list[str]:
         rows = list(csv.DictReader(f, delimiter="\t"))
     fatti_path = bozza_path.with_name(bozza_path.stem + "_autori_cercati.txt")
     fatti = set(fatti_path.read_text(encoding="utf-8").splitlines()) if fatti_path.exists() else set()
+    saltati_path = bozza_path.with_name(bozza_path.stem + "_autori_saltati.txt")
+    non_risposti = set(saltati_path.read_text(encoding="utf-8").splitlines()) if saltati_path.exists() else set()
     chiave = lambda r: f"{r['titolo']}|{r.get('performer', '')}"
     da_fare = [r for r in rows
                if (r.get("titolo") or "").strip() and not (r.get("autore") or r.get("compositore"))
-               and chiave(r) not in fatti]
+               and chiave(r) not in fatti and STORICO_AUTORI not in (r.get("controlla") or "")]
     inizio, trovati, cercati, saltati, di_fila = time.time(), 0, 0, 0, 0
     fermo = ""
     try:
@@ -677,6 +713,7 @@ def cerca_autori(bozza_path: Path, secondi: int) -> list[str]:
                 di_fila = 0
             except MBNonRisponde as e:
                 esito, saltati, di_fila = None, saltati + 1, di_fila + 1
+                non_risposti.add(chiave(r))
                 if di_fila >= 3:
                     cercati += 1
                     fatti.add(chiave(r))
@@ -696,6 +733,7 @@ def cerca_autori(bozza_path: Path, secondi: int) -> list[str]:
         if cercati:
             scrivi_bozza(rows, bozza_path)
             fatti_path.write_text("\n".join(sorted(fatti)), encoding="utf-8")
+            saltati_path.write_text("\n".join(sorted(non_risposti)), encoding="utf-8")
     out = [f"Cercati {cercati} brani, autori trovati per {trovati}"
            + (f", {saltati} saltati perché MusicBrainz non rispondeva" if saltati else "")
            + f". Bozza aggiornata: {bozza_path}"]
@@ -710,6 +748,129 @@ def cerca_autori(bozza_path: Path, secondi: int) -> list[str]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Storico: le decisioni delle serate passate (solo dove la cartella resta)
+# ---------------------------------------------------------------------------
+
+STORICO_NOTA = "confermato dallo storico"
+STORICO_AUTORI = "autori già cercati"
+STORICO_COLS = ["titolo_file", "artista_file", "parte", "titolo", "performer",
+                "autore", "compositore", "stato", "autori_cercati"]
+ORIGINE_COLS = ["riga", "titolo_file", "artista_file", "parti"]
+
+
+def ambiente() -> str:
+    """desktop, browser o sconosciuto. Vale solo come indizio: lo decide anche la cartella aperta dal DJ."""
+    if platform.system() in ("Windows", "Darwin"):
+        return "desktop"
+    if os.getcwd().startswith("/workspace/scratch") or os.path.exists("/mnt/user-data") or os.path.exists("/mnt/data"):
+        return "browser"
+    return "sconosciuto"
+
+
+def chiave_storico(titolo: str, artista: str) -> tuple[str, str]:
+    norm = lambda x: re.sub(r"\s+", " ", (x or "")).strip().casefold()
+    return norm(titolo), norm(artista)
+
+
+def leggi_memoria(path: Path) -> dict:
+    """{chiave: [voci]}. File assente = memoria vuota; file rovinato = ValueError, mai sovrascriverlo."""
+    if not path.exists():
+        return {}
+    text = _decode(path.read_bytes()).lstrip("﻿")
+    # Se il DJ lo riapre e salva con Excel italiano, il separatore diventa il punto e virgola.
+    prima = text.split("\n", 1)[0]
+    righe = list(csv.DictReader(io.StringIO(text), delimiter=";" if ";" in prima and "," not in prima else ","))
+    if text.strip() and (not righe or any(c not in righe[0] for c in STORICO_COLS)):
+        raise ValueError("colonne non riconosciute")
+    memoria: dict = {}
+    for r in righe:
+        memoria.setdefault(chiave_storico(r["titolo_file"], r["artista_file"]), []).append(r)
+    return memoria
+
+
+def scrivi_memoria(memoria: dict, path: Path) -> None:
+    """Scrive su un file temporaneo e poi lo sostituisce; la versione precedente resta in .bak."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8-sig", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=STORICO_COLS, lineterminator="\r\n")
+        w.writeheader()
+        for voci in memoria.values():
+            w.writerows({c: v.get(c, "") for c in STORICO_COLS} for v in voci)
+    if path.exists():
+        os.replace(path, path.with_name(path.name + ".bak"))
+    os.replace(tmp, path)
+
+
+def _origine_path(bozza_path: Path) -> Path:
+    return bozza_path.with_name(bozza_path.stem + "_origine.tsv")
+
+
+def scrivi_origine(origine: list[dict], bozza_path: Path) -> None:
+    with open(_origine_path(bozza_path), "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=ORIGINE_COLS, delimiter="\t", lineterminator="\n")
+        w.writeheader()
+        w.writerows(origine)
+
+
+def salva_storico(bozza_path: Path, memoria_path: Path, tolti: set[int],
+                  dimentica: tuple[str, ...] = ()) -> list[str]:
+    """Aggiorna la memoria con la bozza finale. Una riga mancante si salva come tolta solo se il DJ l'ha detto."""
+    try:
+        memoria = leggi_memoria(memoria_path)
+    except ValueError as e:
+        return [f"STORICO ILLEGGIBILE ({e}): non l'ho toccato."]
+    if not _origine_path(bozza_path).exists():
+        return ["STORICO NON SALVATO: manca il file di origine, rilancia prepara."]
+    via = {chiave_storico(t, "")[0] for t in dimentica}
+    prima = len(memoria)
+    memoria = {k: v for k, v in memoria.items() if k[0] not in via}
+    dimenticati = prima - len(memoria)
+    leggi = lambda p: set(p.read_text(encoding="utf-8").splitlines()) if p.exists() else set()
+    cercati = leggi(bozza_path.with_name(bozza_path.stem + "_autori_cercati.txt"))
+    cercati -= leggi(bozza_path.with_name(bozza_path.stem + "_autori_saltati.txt"))
+    with open(bozza_path, encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f, delimiter="\t"))
+    per_riga: dict = {}
+    for r in rows:
+        testa = str(r.get("n") or "").split(".")[0]
+        if testa.isdigit():
+            per_riga.setdefault(int(testa), []).append(r)
+    with open(_origine_path(bozza_path), encoding="utf-8", newline="") as f:
+        origine = list(csv.DictReader(f, delimiter="\t"))
+    pulito = lambda x: re.sub(r"[\r\n\t]+", " ", x or "").strip()
+    nuovi = aggiornati = tolte = saltate = 0
+    for o in origine:
+        riga, ch = int(o["riga"]), chiave_storico(o["titolo_file"], o["artista_file"])
+        base = {"titolo_file": o["titolo_file"], "artista_file": o["artista_file"]}
+        c_era = ch in memoria
+        if riga in tolti:
+            memoria[ch] = [dict(base, parte="1", titolo="", performer="", autore="", compositore="",
+                                stato="tolto", autori_cercati="")]
+            tolte += 1
+            continue
+        finali = per_riga.get(riga, [])
+        # Riga cancellata o mashup rimasto con meno parti: spesso vale solo per quella
+        # serata ("già suonata"), quindi non diventa una regola per le prossime.
+        if len(finali) < int(o["parti"]) or any(
+                not pulito(r.get("titolo")) or not (pulito(r.get("performer")) or pulito(r.get("autore")))
+                for r in finali):
+            saltate += 1
+            continue
+        memoria[ch] = [dict(
+            base, parte=str(k), titolo=pulito(r["titolo"]), performer=pulito(r.get("performer")),
+            autore=pulito(r.get("autore")), compositore=pulito(r.get("compositore")), stato="ok",
+            autori_cercati="si" if (r.get("autore") or r.get("compositore") or STORICO_AUTORI in (r.get("controlla") or "")
+                                    or f"{r['titolo']}|{r.get('performer', '')}" in cercati) else "no",
+        ) for k, r in enumerate(finali, start=1)]
+        aggiornati += c_era
+        nuovi += not c_era
+    scrivi_memoria(memoria, memoria_path)
+    return [f"STORICO SALVATO in {memoria_path}: {len(memoria)} brani in memoria "
+            f"({nuovi} nuovi, {aggiornati} confermati o aggiornati, {tolte} da togliere, "
+            f"{saltate} righe di questa serata non memorizzate, {dimenticati} dimenticati)."]
+
+
 def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -718,6 +879,7 @@ def main():
     p1 = sub.add_parser("prepara", help="legge l'export e scrive la bozza")
     p1.add_argument("file")
     p1.add_argument("--out", default="bozza.tsv")
+    p1.add_argument("--storico", help="memoria delle serate passate, se il DJ la vuole")
     p2 = sub.add_parser("csv", help="scrive il CSV dalla bozza corretta")
     p2.add_argument("bozza")
     p2.add_argument("--out", default="setlist.csv")
@@ -727,18 +889,41 @@ def main():
     p3.add_argument("bozza")
     p3.add_argument("--secondi", type=int, default=240, help="tempo massimo per volta")
     sub.add_parser("rete", help="controlla se MusicBrainz è raggiungibile")
+    p4 = sub.add_parser("storico", help="salva le decisioni della bozza finale")
+    p4.add_argument("bozza")
+    p4.add_argument("--memoria", required=True)
+    p4.add_argument("--tolti", default="", help="righe (colonna n) che il DJ ha chiesto di togliere: 12,35")
+    p4.add_argument("--dimentica", action="append", default=[], help="titolo com'è nel file da togliere dalla memoria")
     a = ap.parse_args()
     if a.cmd == "rete":
         print(f"MusicBrainz: {mb_stato()}.")
     elif a.cmd == "autori":
         for line in cerca_autori(Path(a.bozza), a.secondi):
             print(line)
+    elif a.cmd == "storico":
+        tolti = {int(x.split(".")[0]) for x in a.tolti.replace(" ", "").split(",") if x}
+        for line in salva_storico(Path(a.bozza), Path(a.memoria), tolti, tuple(a.dimentica)):
+            print(line)
     elif a.cmd == "prepara":
-        bozza, info = prepara(Path(a.file))
+        memoria = None
+        if a.storico:
+            try:
+                memoria = leggi_memoria(Path(a.storico))
+            except ValueError as e:
+                print(f"STORICO ILLEGGIBILE ({e}): per questa serata lo ignoro.")
+        bozza, info = prepara(Path(a.file), memoria)
         scrivi_bozza(bozza, Path(a.out))
+        scrivi_origine(info["origine"], Path(a.out))
         print(f"{info['file']} ({info['formato']}): {info['righe']} righe, {len(bozza)} opere in bozza, "
               f"{info['mashup']} mashup divisi, {len(info['doppioni'])} doppioni tolti.")
-        solo, autori = stime(len(bozza))
+        print(f"AMBIENTE: {ambiente()}.")
+        if memoria is not None:
+            print(f"STORICO: {len(memoria)} brani in memoria, {info['storico']} righe confermate in automatico, "
+                  f"{len(info['storico_tolti'])} tolte come deciso in passato"
+                  + (f" ({'; '.join(info['storico_tolti'])})" if info["storico_tolti"] else "") + ".")
+        nuovi = [r for r in bozza if STORICO_NOTA not in r["controlla"]]
+        da_cercare = [r for r in bozza if not (r["autore"] or r["compositore"]) and STORICO_AUTORI not in r["controlla"]]
+        solo, autori = stime(len(nuovi), len(da_cercare))
         print(f"STIMA solo interpreti: circa {solo} minuti.")
         print(f"STIMA anche autori e compositori: circa {solo + autori} minuti in tutto "
               f"({autori} per la ricerca su MusicBrainz, servizio esterno).")

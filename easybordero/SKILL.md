@@ -21,13 +21,28 @@ Lo script legge il file, scrive la bozza e la stampa: non serve rileggerla dal f
 - doppioni tolti;
 - interprete principale già inserito.
 
-In testa stampa anche le due righe **STIMA** (minuti, calcolati sul numero di brani) e se **MusicBrainz** è raggiungibile: ti servono subito.
+In testa stampa anche **AMBIENTE**, le due righe **STIMA** (minuti, calcolati sul numero di brani) e se **MusicBrainz** è raggiungibile: ti servono subito.
 
 Se il DJ ha incollato una lista, salvala prima in un file di testo, una riga per brano nella forma `Artista - Titolo`.
 
-## 2. La prima domanda: solo interpreti o anche autori?
+## 2. Le prime domande: storico e autori
 
-Subito dopo `prepara`, prima di correggere, fai questa domanda **con lo strumento delle domande a pulsanti** (in Claude è sempre disponibile: usalo). Metti nei pulsanti i minuti delle righe STIMA, per esempio con 154 brani:
+**Storico, solo da app desktop.** Se AMBIENTE è `desktop`, oppure se il DJ ti ha fatto aprire una cartella del suo computer, chiedi per prima cosa, con i pulsanti:
+
+«Vuoi tenere lo storico dei brani in un file nella tua cartella? Alla prossima serata i brani già decisi vengono confermati in automatico, senza domande e senza cercare di nuovo gli autori.»
+→ «Sì, tieni lo storico» / «No»
+
+Se AMBIENTE è `browser` o `sconosciuto` e il DJ non ha aperto nessuna cartella, non parlare dello storico. Una cartella temporanea della chat non vale: il file si perderebbe.
+
+Se il DJ dice sì, il file è `memoria_easybordero.csv` nella sua cartella: se non c'è ancora, lo script parte da zero. Rilancia con la memoria:
+
+```bash
+python scripts/setlist.py prepara "<file del DJ>" --out bozza.tsv --storico "<cartella del DJ>/memoria_easybordero.csv"
+```
+
+La riga **STORICO** dice quante righe sono già confermate, e le righe STIMA tengono conto solo dei brani nuovi. Se stampa **STORICO ILLEGGIBILE**, dillo al DJ: il file non è stato toccato e questa serata si lavora senza.
+
+**Solo interpreti o anche autori.** Subito dopo, prima di correggere, fai questa domanda **con lo strumento delle domande a pulsanti** (in Claude è sempre disponibile: usalo). Metti nei pulsanti i minuti delle righe STIMA, per esempio con 154 brani:
 
 «Ho letto 154 brani. Nel file metto solo gli interpreti o anche autori e compositori? Autori e compositori li cerco su MusicBrainz, un servizio esterno gratuito che risponde a un brano per volta: li trovo per circa un brano su quattro, molto meno per la musica italiana.»
 → «Solo interpreti · circa 4 minuti» / «Anche autori e compositori · circa 19 minuti, servizio esterno»
@@ -47,9 +62,10 @@ Su ogni riga si dichiara **l'opera originale**: titolo ufficiale e interprete or
   - **mashup senza separatore**: dividili tu in più righe, per esempio «Desolee Gasolina» diventa Désolée di Anna e Gasolina di Daddy Yankee. Se riconosci una sola parte («G63 (Dj Matt Mashup)»), tieni quella senza chiedere;
   - **parte già suonata da sola**: toglila;
   - **DJ mix intero**: chiedi al DJ.
+- **Righe con la nota «confermato dallo storico».** Non correggerle e non fare domande su queste righe, a meno che non te lo chieda il DJ.
 - **Autore e compositore.** Non scriverli tu, né a memoria né cercandoli sul web: o li riporta già il file, o li cerca lo script al passo 5.
 
-Scrivi le correzioni direttamente in `bozza.tsv`. Per togliere un brano cancella la riga. Le colonne `n` e `controlla` servono solo a te: il CSV non le usa.
+Scrivi le correzioni direttamente in `bozza.tsv`. Per togliere un brano cancella la riga. Se dividi una riga in più opere, numerale così: `12.1`, `12.2`. Le colonne `n` e `controlla` servono solo a te: il CSV non le usa.
 
 ## 4. Chiedi solo i dubbi
 
@@ -87,8 +103,19 @@ python scripts/setlist.py csv bozza.tsv --out setlist_AAAA-MM-GG.csv
 
 Usa la data della serata, che spesso è nel nome del file. Se lo script segnala righe senza interprete, completale e rilancia il comando.
 
+Se il DJ ha scelto lo storico, salvalo subito:
+
+```bash
+python scripts/setlist.py storico bozza.tsv --memoria "<cartella del DJ>/memoria_easybordero.csv" --tolti "12,35"
+```
+
+In `--tolti` metti solo le righe (colonna `n`) che il DJ ha detto di togliere rispondendo a una domanda; se non ce ne sono, ometti l'opzione. Non metterci i brani che hai tolto tu perché doppi o già suonati quella sera: varrebbero anche per le serate future.
+
+Se dopo la consegna il DJ dice che un brano è sbagliato, correggilo in `bozza.tsv` e rilancia i comandi `csv` e `storico`. Se vuole rimettere un brano tolto in passato, aggiungi la riga in `bozza.tsv` e, nel comando `storico`, aggiungi `--dimentica "<titolo com'è nel file>"`.
+
 Dai il file da scaricare con queste righe:
 - quanti brani contiene;
+- se hai usato lo storico: quanti brani sono stati confermati in automatico, che vanno controllati anche quelli, e quali sono stati tolti come deciso in passato;
 - se hai cercato gli autori: per quanti brani li hai trovati, che vengono da MusicBrainz e che vanno controllati, perché possono essere incompleti o scritti con il nome d'arte;
 - sul portale dei borderò: crea la setlist, carica il CSV, controlla che i brani siano riconosciuti, associa la setlist al borderò e invia;
 - se il portale non riconosce le colonne, posso rifarlo con il punto e virgola come separatore (`--separatore ";"`);
