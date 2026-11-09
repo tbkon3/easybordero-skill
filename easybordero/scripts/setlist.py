@@ -193,11 +193,12 @@ def split_multi_artist(artist: str) -> list[str]:
 TITLE_COLS = {"track title", "titolo traccia", "titolo brano", "title", "titolo",
               "nome brano", "song title", "name", "song", "track", "nome"}
 ARTIST_COLS = {"artist", "artista", "performer"}
-TIME_COLS = {"time", "durata", "duration", "tempo", "length", "lunghezza"}
+TIME_COLS = {"time", "durata", "duration", "tempo", "length", "lunghezza", "playtime"}
 AUTORE_COLS = {"autore", "author", "autori"}
 COMPOSITORE_COLS = {"compositore", "composer", "compositori"}
 _HEADER_TOKENS = TITLE_COLS | ARTIST_COLS | TIME_COLS | AUTORE_COLS | COMPOSITORE_COLS | {
-    "bpm", "key", "tonalità", "tonalita", "genre", "genere", "#", "classifica", "rating"}
+    "bpm", "key", "tonalità", "tonalita", "genre", "genere", "#", "classifica", "rating",
+    "start time", "end time", "deck", "notes"}
 
 
 def _decode(data: bytes) -> str:
@@ -249,6 +250,14 @@ def _from_table(rows: list[list[str]]) -> list[dict]:
     ti, ai, di = find(TITLE_COLS), find(ARTIST_COLS), find(TIME_COLS)
     au, co = find(AUTORE_COLS), find(COMPOSITORE_COLS)
     body = rows[1:] if has_header else rows
+    serato = has_header and "start time" in head
+    if serato and body:
+        # Nella History di Serato la prima riga è la sessione, non un brano: ha la data.
+        inizio = head.index("start time")
+        ora = body[0][inizio] if inizio < len(body[0]) else ""
+        artista = body[0][ai].strip() if ai is not None and ai < len(body[0]) else ""
+        if re.search(r"\d{4}|,", ora) and not artista:
+            body = body[1:]
     if ti is None:
         # Senza intestazione riconosciuta: prima colonna non numerica = titolo.
         sample = body[0] if body else []
@@ -259,7 +268,10 @@ def _from_table(rows: list[list[str]]) -> list[dict]:
     for r in body:
         cell = lambda i: (r[i] if i is not None and i < len(r) else "") or ""
         if cell(ti).strip():
-            out.append(_row(cell(ti), cell(ai), cell(di), cell(au), cell(co)))
+            titolo, artista = cell(ti), cell(ai)
+            if serato and ai is None and " - " in titolo:  # colonna unica "Artista - Titolo"
+                artista, titolo = titolo.split(" - ", 1)
+            out.append(_row(titolo, artista, cell(di), cell(au), cell(co)))
     return out
 
 
@@ -272,6 +284,61 @@ def _sniff_delimiter(text: str) -> str:
 def parse_delimited(text: str) -> list[dict]:
     reader = csv.reader(io.StringIO(text), delimiter=_sniff_delimiter(text))
     return _from_table([list(r) for r in reader])
+
+
+def looks_like_serato_txt(text: str) -> bool:
+    prima = text.split("\n", 1)[0]
+    return bool(re.match(r"\s*(name|artist)\s{2,}", prima, re.I)) and "start time" in prima.lower()
+
+
+def parse_serato_txt(text: str) -> list[dict]:
+    """Export TXT della History: colonne a larghezza fissa, divise da righe di trattini."""
+    righe = [l for l in text.splitlines() if l.strip() and set(l.strip()) != {"-"}]
+    inizi = [m.start() for m in re.finditer(r"\S+(?: \S+)*", righe[0])]
+    return _from_table([[l[a:b].strip() for a, b in zip(inizi, inizi[1:] + [None])] for l in righe])
+
+
+SERATO_ALTRO = ("Questo file di Serato non è un elenco di brani della serata (è una sessione o la libreria). "
+                "Serve l'export della serata: in Serato apri History, scegli la serata, Export, formato CSV. "
+                "In alternativa va bene il file .crate della serata.")
+_CARTELLA_MIX = re.compile(r"\bmix(ati)?\b", re.IGNORECASE)
+
+
+def _serato_blocchi(data: bytes):
+    i = 0
+    while i + 8 <= len(data):
+        n = int.from_bytes(data[i + 4:i + 8], "big")
+        if i + 8 + n > len(data):
+            sys.exit("Il file .crate è incompleto o danneggiato: copialo di nuovo da Serato e riprova.")
+        yield data[i:i + 4], data[i + 8:i + 8 + n]
+        i += 8 + n
+
+
+def parse_serato_crate(data: bytes) -> list[dict]:
+    """File .crate: per ogni brano c'è solo il percorso del file, niente tag né durata."""
+    blocchi = _serato_blocchi(data)
+    tag, valore = next(blocchi, (b"", b""))
+    if tag != b"vrsn" or b"C\x00r\x00a\x00t\x00e" not in valore:  # "Crate" in UTF-16 BE, a byte pari
+        sys.exit(SERATO_ALTRO)
+    out = []
+    for tag, valore in blocchi:
+        if tag != b"otrk":
+            continue
+        for itag, ivalore in _serato_blocchi(valore):
+            if itag != b"ptrk":
+                continue
+            percorso = ivalore.decode("utf-16-be", errors="replace").rstrip("\x00")
+            titolo, artista = title_artist_from_path(percorso)
+            if titolo:
+                r = _row(titolo, artista)
+                cartelle = percorso.replace("\\", "/").split("/")
+                if len(cartelle) > 1 and _CARTELLA_MIX.search(cartelle[-2]):
+                    r["nota"] = f"nella cartella {cartelle[-2]}: DJ mix intero?"
+                out.append(r)
+    if not out:
+        sys.exit("Questo crate non contiene brani (può essere una smart crate). "
+                 "Serve l'export della serata: in Serato apri History, scegli la serata, Export, formato CSV.")
+    return out
 
 
 def parse_xlsx(path: Path) -> list[dict]:
@@ -325,7 +392,7 @@ def title_artist_from_path(path: str) -> tuple[str, str]:
     name = re.sub(r"^\d{1,2}[.\s]+", "", name)
     name = re.sub(r"^\d{2,}\.\s+", "", name)
     name = re.sub(r"^(\S+)-\s", r"\1 - ", name)
-    name = name.replace("_", " ").strip()
+    name = re.sub(r"\s[–—]\s", " - ", name.replace("_", " ")).strip()
     if " - " in name:
         artist, title = name.split(" - ", 1)
         return title.strip(), artist.strip()
@@ -419,7 +486,15 @@ def read_export(path: Path) -> tuple[str, list[dict]]:
     ext = path.suffix.lower()
     if ext in (".xlsx", ".xlsm"):
         return "excel", parse_xlsx(path)
-    text = _decode(path.read_bytes())
+    data = path.read_bytes()
+    if ext == ".crate" or data[:4] == b"vrsn":
+        return "serato crate", parse_serato_crate(data)
+    if data[:16] == b"SQLite format 3\x00":
+        sys.exit(SERATO_ALTRO)
+    text = _decode(data)
+    if "\x00" in text:
+        sys.exit("Questo file non è testo leggibile, quindi non posso ricavarne i brani. "
+                 "Serve l'export della serata in CSV, TXT, M3U, XML o Excel .xlsx.")
     if ext == ".nml":
         return "traktor", parse_traktor(text)
     if ext == ".xml":
@@ -428,6 +503,8 @@ def read_export(path: Path) -> tuple[str, list[dict]]:
         return "m3u", parse_m3u(text)
     if looks_like_winlive(text):
         return "winlive", parse_winlive(text)
+    if looks_like_serato_txt(text):
+        return "serato txt", parse_serato_txt(text)
     return "tabella", parse_delimited(text)
 
 
@@ -484,7 +561,7 @@ def prepara(path: Path, memoria: dict | None = None) -> tuple[list[dict], dict]:
                 })
             continue
         performer = _MAIN_ARTIST_SPLIT.split(raw_a.strip())[0].strip() if raw_a else ""
-        note = []
+        note = [r["nota"]] if r.get("nota") else []
         if r["durata_sec"] and r["durata_sec"] > LONG_MIX_SECONDS:
             note.append(f"dura {_mmss(r['durata_sec'])}: DJ mix intero?")
         if _NOT_MUSIC_HINT.search(raw_t) and len(clean_title(raw_t)) < 25:

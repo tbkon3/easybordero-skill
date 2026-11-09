@@ -84,7 +84,7 @@ Se ti blocchi, chiedi aiuto a ChatGPT stesso: incollagli il link di questa pagin
 ## Come esportare la cronologia
 
 - **Rekordbox**: Cronologia, tasto destro sulla serata, **Esporta playlist in un file** (.txt).
-- **Serato**: History, scegli la serata, **Export** (.csv).
+- **Serato**: History, scegli la serata, **Export** (.csv). Va bene anche il file .crate della serata (di solito in Musica, `_Serato_`, `Subcrates`), ma contiene solo i nomi dei file: gli interpreti vanno controllati con più attenzione e deve contenere solo i brani suonati.
 - **Traktor**: History, tasto destro, **Export Playlist** (.nml).
 - **VirtualDJ**: History, tasto destro sulla data, **Export** (.m3u).
 - **WinLive PRO**: la lista dei brani esportata in .txt.

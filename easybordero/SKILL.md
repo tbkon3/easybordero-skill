@@ -1,6 +1,6 @@
 ---
 name: easybordero
-description: Prepara la bozza del file CSV della setlist da caricare sul portale dei borderò, partendo dall'export del software DJ (Rekordbox, Serato, Traktor, VirtualDJ, Engine, djay, WinLive, M3U, Excel o una lista incollata). Usala ogni volta che un DJ parla di borderò, programma musicale, setlist, cronologia o history della serata da dichiarare, anche se non nomina il CSV.
+description: Prepara la bozza del file CSV della setlist da caricare sul portale dei borderò, partendo dall'export del software DJ (Rekordbox, Serato anche da file .crate, Traktor, VirtualDJ, Engine, djay, WinLive, M3U, Excel o una lista incollata). Usala ogni volta che un DJ parla di borderò, programma musicale, setlist, crate, cronologia o history della serata da dichiarare, anche se non nomina il CSV.
 ---
 
 # easybordero
@@ -24,6 +24,15 @@ Lo script legge il file, scrive la bozza e la stampa: non serve rileggerla dal f
 In testa stampa anche **AMBIENTE**, le due righe **STIMA** (minuti, calcolati sul numero di brani) e se **MusicBrainz** è raggiungibile: ti servono subito.
 
 Se il DJ ha incollato una lista, salvala prima in un file di testo, una riga per brano nella forma `Artista - Titolo`.
+
+Se lo script si ferma con un messaggio (file di Serato sbagliato, file danneggiato, file non leggibile), riferiscilo al DJ con parole semplici e chiedi il file giusto. Non provare a leggere quel file per conto tuo e non scrivere altri script.
+
+**File `.crate` di Serato.** Se nella prima riga stampata il formato è `serato crate`, il file contiene solo i nomi dei file audio, senza interpreti né durate, ed elenca i brani messi nella cartella, non quelli suonati. Prima delle domande del passo 2 chiedi, con i pulsanti:
+
+«Questo crate contiene solo i brani che hai suonato in quella serata?»
+→ «Sì, solo quelli» / «No, ti mando la History»
+
+Se sceglie la History, spiegagli: in Serato apri History, scegli la serata, Export, formato CSV. Poi lavora il nuovo file. Se dice sì, continua con il crate.
 
 ## 2. Le prime domande: storico e autori
 
@@ -62,6 +71,7 @@ Su ogni riga si dichiara **l'opera originale**: titolo ufficiale e interprete or
   - **mashup senza separatore**: dividili tu in più righe, per esempio «Desolee Gasolina» diventa Désolée di Anna e Gasolina di Daddy Yankee. Se riconosci una sola parte («G63 (Dj Matt Mashup)»), tieni quella senza chiedere;
   - **parte già suonata da sola**: toglila;
   - **DJ mix intero**: chiedi al DJ.
+- **Righe da un crate.** Dove manca l'interprete, inserisci quello originale riconoscendo il brano dal titolo: senza interprete il CSV salta la riga. Se non riconosci il brano, mettilo tra i dubbi. Sistema i nomi rovinati: «La BebÇ Remix» diventa «La Bebé», «L amour toujours» diventa «L'amour toujours». Se il nome non è un titolo (una sequenza casuale di lettere e numeri), chiedi al DJ.
 - **Righe con la nota «confermato dallo storico».** Non correggerle e non fare domande su queste righe, a meno che non te lo chieda il DJ.
 - **Autore e compositore.** Non scriverli tu, né a memoria né cercandoli sul web: o li riporta già il file, o li cerca lo script al passo 5.
 
@@ -116,6 +126,7 @@ Se dopo la consegna il DJ dice che un brano è sbagliato, correggilo in `bozza.t
 Dai il file da scaricare con queste righe:
 - quanti brani contiene;
 - se hai usato lo storico: quanti brani sono stati confermati in automatico, che vanno controllati anche quelli, e quali sono stati tolti come deciso in passato;
+- se il file era un crate: che gli interpreti mancanti li hai dedotti dal titolo e che vanno controllati;
 - se hai cercato gli autori: per quanti brani li hai trovati, che vengono da MusicBrainz e che vanno controllati, perché possono essere incompleti o scritti con il nome d'arte;
 - sul portale dei borderò: crea la setlist, carica il CSV, controlla che i brani siano riconosciuti, associa la setlist al borderò e invia;
 - se il portale non riconosce le colonne, posso rifarlo con il punto e virgola come separatore (`--separatore ";"`);
