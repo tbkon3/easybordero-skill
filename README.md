@@ -88,6 +88,7 @@ Se ti blocchi, chiedi aiuto a ChatGPT stesso: incollagli il link di questa pagin
 - **Traktor**: History, tasto destro, **Export Playlist** (.nml).
 - **VirtualDJ**: History, tasto destro sulla data, **Export** (.m3u).
 - **WinLive PRO**: la lista dei brani esportata in .txt.
+- **Brani da aggiungere**: all'avvio la skill chiede se hai un Excel, un CSV o un elenco con brani suonati che non sono nell'export, per esempio i dischi della preserata o quelli finiti in un altro crate. Vanno nel file finale come li hai scritti e i dati mancanti vengono cercati online.
 - **Altri programmi**: una playlist .m3u8, .csv o un foglio Excel. Va bene anche copiare e incollare l'elenco dei brani nella chat.
 
 ---

@@ -236,7 +236,7 @@ def _row(title, artist="", duration=None, autore="", compositore="") -> dict:
             "autore_file": (autore or "").strip(), "compositore_file": (compositore or "").strip()}
 
 
-def _from_table(rows: list[list[str]]) -> list[dict]:
+def _from_table(rows: list[list[str]], solo_con: str = "") -> list[dict]:
     """Tabella con intestazione (TXT Rekordbox, CSV Serato, CSV/TSV generici, Excel)."""
     rows = [r for r in rows if any((c or "").strip() for c in r)]
     if not rows:
@@ -250,6 +250,11 @@ def _from_table(rows: list[list[str]]) -> list[dict]:
     ti, ai, di = find(TITLE_COLS), find(ARTIST_COLS), find(TIME_COLS)
     au, co = find(AUTORE_COLS), find(COMPOSITORE_COLS)
     body = rows[1:] if has_header else rows
+    if solo_con:  # il DJ ha indicato la colonna che dice quali righe prendere
+        if solo_con.strip().lower() not in head:
+            sys.exit(f"Nel file non c'è la colonna «{solo_con}». Le colonne sono: {', '.join(c for c in head if c)}")
+        col = head.index(solo_con.strip().lower())
+        body = [r for r in body if col < len(r) and (r[col] or "").strip()]
     serato = has_header and "start time" in head
     if serato and body:
         # Nella History di Serato la prima riga è la sessione, non un brano: ha la data.
@@ -281,9 +286,32 @@ def _sniff_delimiter(text: str) -> str:
     return max(counts, key=counts.get) if max(counts.values()) else "\t"
 
 
-def parse_delimited(text: str) -> list[dict]:
+def parse_delimited(text: str, solo_con: str = "") -> list[dict]:
     reader = csv.reader(io.StringIO(text), delimiter=_sniff_delimiter(text))
-    return _from_table([list(r) for r in reader])
+    return _from_table([list(r) for r in reader], solo_con)
+
+
+def parse_xls(path: Path, solo_con: str = "") -> list[dict]:
+    """Excel vecchio formato (.xls). Numeri interi e orari tornano come si leggono nel foglio."""
+    try:
+        import xlrd
+    except ImportError:
+        sys.exit("Per i file .xls serve xlrd: pip install xlrd. In alternativa salva il file come .xlsx o .csv.")
+    try:
+        wb = xlrd.open_workbook(str(path))
+    except Exception:  # noqa: BLE001
+        sys.exit("Non riesco ad aprire questo file .xls: salvalo come .xlsx o .csv e riprova.")
+    ws = wb.sheet_by_index(0)
+
+    def valore(c):
+        if c.ctype == xlrd.XL_CELL_DATE:
+            _, _, _, ore, minuti, secondi = xlrd.xldate_as_tuple(c.value, wb.datemode)
+            return f"{ore}:{minuti:02d}:{secondi:02d}"
+        if c.ctype == xlrd.XL_CELL_NUMBER and float(c.value).is_integer():
+            return str(int(c.value))
+        return "" if c.value is None else str(c.value)
+
+    return _from_table([[valore(c) for c in ws.row(i)] for i in range(ws.nrows)], solo_con)
 
 
 def looks_like_serato_txt(text: str) -> bool:
@@ -341,7 +369,7 @@ def parse_serato_crate(data: bytes) -> list[dict]:
     return out
 
 
-def parse_xlsx(path: Path) -> list[dict]:
+def parse_xlsx(path: Path, solo_con: str = "") -> list[dict]:
     try:
         import openpyxl
     except ImportError:
@@ -349,7 +377,7 @@ def parse_xlsx(path: Path) -> list[dict]:
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     ws = wb.active
     rows = [["" if v is None else str(v) for v in r] for r in ws.iter_rows(values_only=True)]
-    return _from_table(rows)
+    return _from_table(rows, solo_con)
 
 
 def parse_traktor(text: str) -> list[dict]:
@@ -482,11 +510,13 @@ def parse_winlive(text: str) -> list[dict]:
     return out
 
 
-def read_export(path: Path) -> tuple[str, list[dict]]:
+def read_export(path: Path, solo_con: str = "") -> tuple[str, list[dict]]:
     ext = path.suffix.lower()
     if ext in (".xlsx", ".xlsm"):
-        return "excel", parse_xlsx(path)
+        return "excel", parse_xlsx(path, solo_con)
     data = path.read_bytes()
+    if ext == ".xls" and data[:4] == b"\xd0\xcf\x11\xe0":
+        return "excel", parse_xls(path, solo_con)
     if ext == ".crate" or data[:4] == b"vrsn":
         return "serato crate", parse_serato_crate(data)
     if data[:16] == b"SQLite format 3\x00":
@@ -505,7 +535,7 @@ def read_export(path: Path) -> tuple[str, list[dict]]:
         return "winlive", parse_winlive(text)
     if looks_like_serato_txt(text):
         return "serato txt", parse_serato_txt(text)
-    return "tabella", parse_delimited(text)
+    return "tabella", parse_delimited(text, solo_con)
 
 
 # ---------------------------------------------------------------------------
@@ -529,6 +559,19 @@ def _mmss(sec):
     return f"{sec // 60}:{sec % 60:02d}" if sec else ""
 
 
+def voci_memoria(memoria: dict | None, titolo: str, artista: str) -> list[dict] | None:
+    """Dati già trovati per questo brano. Senza artista basta il titolo, se nello storico ce n'è uno solo."""
+    if not memoria:
+        return None
+    chiave = chiave_storico(titolo, artista)
+    if chiave in memoria:
+        return memoria[chiave]
+    if chiave[1]:
+        return None
+    simili = [v for k, v in memoria.items() if k[0] == chiave[0] and v[0]["stato"] == "ok"]
+    return simili[0] if len(simili) == 1 else None
+
+
 def prepara(path: Path, memoria: dict | None = None) -> tuple[list[dict], dict]:
     fmt, rows = read_export(path)
     bozza, seen, by_title, gia_storico = [], set(), {}, set()
@@ -539,12 +582,12 @@ def prepara(path: Path, memoria: dict | None = None) -> tuple[list[dict], dict]:
         if not raw_a and re.search(r"\.(mp3|wav|aiff?|flac|m4a)$", raw_t, re.I):
             raw_t, raw_a = title_artist_from_path(raw_t)
         chiave = chiave_storico(raw_t, raw_a)
-        if memoria and chiave in memoria:
+        voci = voci_memoria(memoria, raw_t, raw_a)
+        if voci:
             if chiave in gia_storico:
                 info["doppioni"].append(f"riga {n} {raw_t}")
                 continue
             gia_storico.add(chiave)
-            voci = memoria[chiave]
             if voci[0]["stato"] == "tolto":
                 info["storico_tolti"].append(raw_t)
                 continue
@@ -605,6 +648,71 @@ def prepara(path: Path, memoria: dict | None = None) -> tuple[list[dict], dict]:
             info["origine"].append({"riga": n, "titolo_file": raw_t, "artista_file": raw_a,
                                     "parti": len(bozza) - prima})
     return bozza, info
+
+
+AGGIUNTIVI_NOTA = "aggiunto dal DJ: non togliere e non chiedere se è stato suonato"
+_ESTENSIONI_AGGIUNTIVI = (".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".xls")
+
+
+def _leggi_elenco(path: Path) -> list[dict] | None:
+    """Elenco scritto a mano, una riga per brano. None se il file è una tabella."""
+    testo = _decode(path.read_bytes())
+    if "\x00" in testo or re.search(r"[\t;]", testo) or looks_like_winlive(testo) or looks_like_serato_txt(testo):
+        return None
+    return [_row(re.sub(r"\s[–—]\s", " - ", re.sub(r"^\s*(?:\d+[.)]\s*|[-*•]\s+)", "", riga)))
+            for riga in testo.splitlines() if riga.strip()]
+
+
+def aggiungi_brani(bozza: list[dict], path: Path, info: dict, memoria: dict | None = None, solo_con: str = "") -> None:
+    """Porta nella bozza i brani del file indicato dal DJ, così come li ha scritti."""
+    if not path.is_file():
+        sys.exit(f"Non trovo il file dei brani da aggiungere: {path}")
+    if path.suffix.lower() not in _ESTENSIONI_AGGIUNTIVI:
+        sys.exit("Il file dei brani da aggiungere deve essere un Excel o un CSV.")
+    righe = _leggi_elenco(path) if path.suffix.lower() == ".txt" and not solo_con else None
+    if righe is None:
+        righe = read_export(path, solo_con)[1]
+    selezione = f" (solo le righe segnate nella colonna «{solo_con}»)" if solo_con else ""
+    if righe and righe[0]["titolo"].lower() in TITLE_COLS and not righe[0]["artista"]:
+        righe = righe[1:]  # file con la sola colonna del titolo
+    if not righe:
+        sys.exit(f"Nel file dei brani da aggiungere non ho trovato brani: {path.name}")
+    aggiunti, gia_presenti, senza, visti = 0, 0, [], set()
+    for r in righe:
+        titolo, artista = r["titolo"], r["artista"]
+        if not artista and not (r["autore_file"] or r["compositore_file"]) and " - " in titolo:
+            artista, titolo = (x.strip() for x in titolo.split(" - ", 1))
+        t, a = chiave_storico(titolo, artista)
+        if (t, a) in visti:
+            continue
+        visti.add((t, a))
+        nuova = {"titolo": titolo, "performer": artista, "autore": r["autore_file"],
+                 "compositore": r["compositore_file"], "durata": _mmss(r["durata_sec"])}
+        nota = AGGIUNTIVI_NOTA
+        voci = voci_memoria(memoria, titolo, artista)
+        if voci and len(voci) == 1 and voci[0]["stato"] == "ok":  # dati già trovati: non si cercano di nuovo
+            for campo in ("performer", "autore", "compositore"):
+                nuova[campo] = nuova[campo] or voci[0][campo]
+            nota += "; " + STORICO_NOTA + (f" ({STORICO_AUTORI})" if voci[0]["autori_cercati"] == "si" else "")
+            a = chiave_storico(titolo, nuova["performer"])[1]
+        uguale = None
+        for b in bozza:
+            bt, ba = chiave_storico(b["titolo"], b["performer"])
+            if bt == t and (not a or not ba or a in ba or ba in a):
+                uguale = b
+                break
+        if uguale is not None:  # già nell'export: una riga sola, con i dati del DJ
+            uguale.update({k: v for k, v in nuova.items() if v})
+            uguale["controlla"] = "; ".join(x for x in (uguale["controlla"], nota) if x)
+            gia_presenti += 1
+            continue
+        aggiunti += 1
+        bozza.append(dict(nuova, n=f"A{aggiunti}", controlla=nota))
+        info["origine"].append({"riga": f"A{aggiunti}", "titolo_file": titolo, "artista_file": artista, "parti": 1})
+        if not (nuova["performer"] or nuova["autore"] or nuova["compositore"]):
+            senza.append(titolo)
+    info["aggiuntivi"] = {"file": path.name, "aggiunti": aggiunti, "gia_presenti": gia_presenti, "senza": senza,
+                          "selezione": selezione}
 
 
 def scrivi_bozza(bozza: list[dict], out: Path) -> None:
@@ -891,7 +999,7 @@ def scrivi_origine(origine: list[dict], bozza_path: Path) -> None:
 
 
 def salva_storico(bozza_path: Path, memoria_path: Path, tolti: set[int],
-                  dimentica: tuple[str, ...] = ()) -> list[str]:
+                  dimentica: tuple[str, ...] = (), aggiuntivi: bool = False) -> list[str]:
     """Aggiorna la memoria con la bozza finale. Una riga mancante si salva come tolta solo se il DJ l'ha detto."""
     try:
         memoria = leggi_memoria(memoria_path)
@@ -913,12 +1021,17 @@ def salva_storico(bozza_path: Path, memoria_path: Path, tolti: set[int],
         testa = str(r.get("n") or "").split(".")[0]
         if testa.isdigit():
             per_riga.setdefault(int(testa), []).append(r)
+        elif re.fullmatch(r"A\d+", testa):
+            per_riga.setdefault(testa, []).append(r)
     with open(_origine_path(bozza_path), encoding="utf-8", newline="") as f:
         origine = list(csv.DictReader(f, delimiter="\t"))
     pulito = lambda x: re.sub(r"[\r\n\t]+", " ", x or "").strip()
-    nuovi = aggiornati = tolte = saltate = 0
+    nuovi = aggiornati = tolte = saltate = ricordati = 0
     for o in origine:
-        riga, ch = int(o["riga"]), chiave_storico(o["titolo_file"], o["artista_file"])
+        riga = int(o["riga"]) if o["riga"].isdigit() else o["riga"]  # "A1": brano aggiunto dal DJ
+        if isinstance(riga, str) and not aggiuntivi:
+            continue
+        ch = chiave_storico(o["titolo_file"], o["artista_file"])
         base = {"titolo_file": o["titolo_file"], "artista_file": o["artista_file"]}
         c_era = ch in memoria
         if riga in tolti:
@@ -930,7 +1043,8 @@ def salva_storico(bozza_path: Path, memoria_path: Path, tolti: set[int],
         # Riga cancellata o mashup rimasto con meno parti: spesso vale solo per quella
         # serata ("già suonata"), quindi non diventa una regola per le prossime.
         if len(finali) < int(o["parti"]) or any(
-                not pulito(r.get("titolo")) or not (pulito(r.get("performer")) or pulito(r.get("autore")))
+                not pulito(r.get("titolo")) or not (pulito(r.get("performer")) or pulito(r.get("autore"))
+                                                    or pulito(r.get("compositore")))
                 for r in finali):
             saltate += 1
             continue
@@ -940,10 +1054,14 @@ def salva_storico(bozza_path: Path, memoria_path: Path, tolti: set[int],
             autori_cercati="si" if (r.get("autore") or r.get("compositore") or STORICO_AUTORI in (r.get("controlla") or "")
                                     or f"{r['titolo']}|{r.get('performer', '')}" in cercati) else "no",
         ) for k, r in enumerate(finali, start=1)]
+        if isinstance(riga, str):
+            ricordati += 1
+            continue
         aggiornati += c_era
         nuovi += not c_era
     scrivi_memoria(memoria, memoria_path)
     return [f"STORICO SALVATO in {memoria_path}: {len(memoria)} brani in memoria "
+            + (f"({ricordati} aggiunti dal DJ) " if aggiuntivi else "") +
             f"({nuovi} nuovi, {aggiornati} confermati o aggiornati, {tolte} da togliere, "
             f"{saltate} righe di questa serata non memorizzate, {dimenticati} dimenticati)."]
 
@@ -957,6 +1075,8 @@ def main():
     p1.add_argument("file")
     p1.add_argument("--out", default="bozza.tsv")
     p1.add_argument("--storico", help="memoria delle serate passate, se il DJ la vuole")
+    p1.add_argument("--aggiuntivi", help="Excel, CSV o elenco con i brani che il DJ vuole aggiungere sempre")
+    p1.add_argument("--solo-con", default="", help="colonna indicata dal DJ: entrano solo le righe dove è compilata")
     p2 = sub.add_parser("csv", help="scrive il CSV dalla bozza corretta")
     p2.add_argument("bozza")
     p2.add_argument("--out", default="setlist.csv")
@@ -969,6 +1089,7 @@ def main():
     p4 = sub.add_parser("storico", help="salva le decisioni della bozza finale")
     p4.add_argument("bozza")
     p4.add_argument("--memoria", required=True)
+    p4.add_argument("--aggiuntivi", action="store_true", help="ricorda anche i brani aggiunti dal DJ")
     p4.add_argument("--tolti", default="", help="righe (colonna n) che il DJ ha chiesto di togliere: 12,35")
     p4.add_argument("--dimentica", action="append", default=[], help="titolo com'è nel file da togliere dalla memoria")
     a = ap.parse_args()
@@ -979,7 +1100,7 @@ def main():
             print(line)
     elif a.cmd == "storico":
         tolti = {int(x.split(".")[0]) for x in a.tolti.replace(" ", "").split(",") if x}
-        for line in salva_storico(Path(a.bozza), Path(a.memoria), tolti, tuple(a.dimentica)):
+        for line in salva_storico(Path(a.bozza), Path(a.memoria), tolti, tuple(a.dimentica), a.aggiuntivi):
             print(line)
     elif a.cmd == "prepara":
         memoria = None
@@ -989,10 +1110,18 @@ def main():
             except ValueError as e:
                 print(f"STORICO ILLEGGIBILE ({e}): per questa serata lo ignoro.")
         bozza, info = prepara(Path(a.file), memoria)
+        if a.aggiuntivi:
+            aggiungi_brani(bozza, Path(a.aggiuntivi), info, memoria, a.solo_con)
         scrivi_bozza(bozza, Path(a.out))
         scrivi_origine(info["origine"], Path(a.out))
         print(f"{info['file']} ({info['formato']}): {info['righe']} righe, {len(bozza)} opere in bozza, "
               f"{info['mashup']} mashup divisi, {len(info['doppioni'])} doppioni tolti.")
+        if a.aggiuntivi:
+            x = info["aggiuntivi"]
+            print(f"AGGIUNTIVI: {x['aggiunti']} brani aggiunti da {x['file']}{x['selezione']}, "
+                  f"{x['gia_presenti']} erano già nell'export (una riga sola, con i dati del DJ).")
+            if x["senza"]:
+                print(f"AGGIUNTIVI SENZA INTERPRETE: {'; '.join(x['senza'])}")
         print(f"AMBIENTE: {ambiente()}.")
         if memoria is not None:
             print(f"STORICO: {len(memoria)} brani in memoria, {info['storico']} righe confermate in automatico, "

@@ -9,7 +9,16 @@ Trasformi la cronologia di una serata in una bozza di CSV da caricare sul portal
 
 ## 1. Prepara la bozza
 
-Se il DJ non ha ancora allegato il file della serata, chiediglielo. Appena ce l'hai:
+Se il DJ non ha ancora allegato il file della serata, chiediglielo. Appena ce l'hai, prima di tutto il resto, chiedi con i pulsanti (salta la domanda solo se te l'ha già indicato lui):
+
+«Hai anche un file Excel, un CSV o un elenco con brani da aggiungere sempre, che hai suonato ma non sono in questo export? Per esempio i dischi della preserata o quelli finiti in un altro crate.»
+→ «Sì, te lo allego» / «No»
+
+Se dice sì, aspetta il file e in ogni comando `prepara` aggiungi `--aggiuntivi "<file dei brani da aggiungere>"`. Un elenco incollato salvalo prima in un file `.txt`, una riga per brano, nella forma `Artista - Titolo` o col solo titolo.
+
+Di norma entrano tutte le righe del file. Se il DJ dice quali prendere, segui le sue istruzioni senza fare domande: se indica una colonna (per esempio «solo quelli con la X»), aggiungi `--solo-con "<nome della colonna>"`; per altre indicazioni crea una copia del file con le sole righe volute e usa quella. Non scegliere mai righe a caso o a rotazione: se te lo chiede, spiega che il borderò riguarda solo i brani eseguiti.
+
+Poi lancia:
 
 ```bash
 python scripts/setlist.py prepara "<file del DJ>" --out bozza.tsv
@@ -51,6 +60,13 @@ python scripts/setlist.py prepara "<file del DJ>" --out bozza.tsv --storico "<ca
 
 La riga **STORICO** dice quante righe sono già confermate, e le righe STIMA tengono conto solo dei brani nuovi. Se stampa **STORICO ILLEGGIBILE**, dillo al DJ: il file non è stato toccato e questa serata si lavora senza.
 
+Se il DJ tiene lo storico e ti ha dato il file dei brani da aggiungere, chiedi con i pulsanti:
+
+«Vuoi tenere nello storico anche i dati dei brani aggiunti dal tuo file (interpreti, autori, compositori)? Così la prossima volta non li cerco di nuovo online.»
+→ «Sì, tienili» / «No»
+
+Lo storico conserva il legame tra il brano come è scritto nel file e i dati trovati: se in un upload successivo lo stesso brano arriva con pochi dettagli, i dati si riprendono da lì senza cercarli online.
+
 **Solo interpreti o anche autori.** Subito dopo, prima di correggere, fai questa domanda **con lo strumento delle domande a pulsanti** (in Claude è sempre disponibile: usalo). Metti nei pulsanti i minuti delle righe STIMA, per esempio con 154 brani:
 
 «Ho letto 154 brani. Nel file metto solo gli interpreti o anche autori e compositori? Autori e compositori li cerco su MusicBrainz, un servizio esterno gratuito che risponde a un brano per volta: li trovo per circa un brano su quattro, molto meno per la musica italiana.»
@@ -72,6 +88,7 @@ Su ogni riga si dichiara **l'opera originale**: titolo ufficiale e interprete or
   - **parte già suonata da sola**: toglila;
   - **DJ mix intero**: chiedi al DJ.
 - **Righe da un crate.** Dove manca l'interprete, inserisci quello originale riconoscendo il brano dal titolo: senza interprete il CSV salta la riga. Se non riconosci il brano, mettilo tra i dubbi. Sistema i nomi rovinati: «La BebÇ Remix» diventa «La Bebé», «L amour toujours» diventa «L'amour toujours». Se il nome non è un titolo (una sequenza casuale di lettere e numeri), chiedi al DJ.
+- **Righe con la nota «aggiunto dal DJ».** Non toglierle, non cambiare quello che ha scritto il DJ e non chiedere se sono state suonate: questo vale solo per queste righe, tutte le altre seguono le regole di questo passo. Se mancano dati, completali come per gli altri brani, a meno che non siano già arrivati dallo storico: l'interprete lo riconosci dal titolo o lo cerchi sul web (o su Spotify, se collegato), autori e compositori li cerca il passo 5 se il DJ li ha chiesti. Se non trovi l'interprete con certezza e la riga ha già autori o compositori, lascialo vuoto. Chiedilo al DJ solo per le righe di **AGGIUNTIVI SENZA INTERPRETE** che non trovi: senza nessun nome il CSV le salta. Se correggendo una riga dell'export diventa uguale a una riga aggiunta dal DJ, cancella quella dell'export.
 - **Righe con la nota «confermato dallo storico».** Non correggerle e non fare domande su queste righe, a meno che non te lo chieda il DJ.
 - **Autore e compositore.** Non scriverli tu, né a memoria né cercandoli sul web: o li riporta già il file, o li cerca lo script al passo 5.
 
@@ -119,6 +136,8 @@ Se il DJ ha scelto lo storico, salvalo subito:
 python scripts/setlist.py storico bozza.tsv --memoria "<cartella del DJ>/memoria_easybordero.csv" --tolti "12,35"
 ```
 
+Se il DJ ha scelto di tenere nello storico anche i dati dei brani aggiunti, aggiungi `--aggiuntivi` a questo comando.
+
 In `--tolti` metti solo le righe (colonna `n`) che il DJ ha detto di togliere rispondendo a una domanda; se non ce ne sono, ometti l'opzione. Non metterci i brani che hai tolto tu perché doppi o già suonati quella sera: varrebbero anche per le serate future.
 
 Se dopo la consegna il DJ dice che un brano è sbagliato, correggilo in `bozza.tsv` e rilancia i comandi `csv` e `storico`. Se vuole rimettere un brano tolto in passato, aggiungi la riga in `bozza.tsv` e, nel comando `storico`, aggiungi `--dimentica "<titolo com'è nel file>"`.
@@ -126,6 +145,7 @@ Se dopo la consegna il DJ dice che un brano è sbagliato, correggilo in `bozza.t
 Dai il file da scaricare con queste righe:
 - quanti brani contiene;
 - se hai usato lo storico: quanti brani sono stati confermati in automatico, che vanno controllati anche quelli, e quali sono stati tolti come deciso in passato;
+- se il DJ ha indicato il file dei brani da aggiungere: quanti ne hai aggiunti e che il borderò deve contenere solo i brani eseguiti, quindi se stasera uno di quelli non l'ha suonato lo deve togliere;
 - se il file era un crate: che gli interpreti mancanti li hai dedotti dal titolo e che vanno controllati;
 - se hai cercato gli autori: per quanti brani li hai trovati, che vengono da MusicBrainz e che vanno controllati, perché possono essere incompleti o scritti con il nome d'arte;
 - sul portale dei borderò: crea la setlist, carica il CSV, controlla che i brani siano riconosciuti, associa la setlist al borderò e invia;
