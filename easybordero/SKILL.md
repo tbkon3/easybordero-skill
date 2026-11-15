@@ -14,11 +14,11 @@ Se il DJ non ha ancora allegato il file della serata, chiediglielo. Appena ce l'
 «Hai anche un file Excel, un CSV o un elenco con altri brani che hai suonato in questa serata ma non sono in questo export? Per esempio i dischi della preserata o quelli finiti in un altro crate.»
 → «Sì, te lo allego» / «No»
 
-Se dice sì, aspetta il file e in ogni comando `prepara` di questa serata aggiungi `--aggiuntivi "<file dei brani da aggiungere>"`. Un elenco incollato salvalo prima in un file `.txt` nuovo, una riga per brano, nella forma `Artista - Titolo` o col solo titolo: non aggiungere righe a un file che esiste già.
+Se dice sì, aspetta il file e in ogni comando `prepara` di questa serata aggiungi `--aggiuntivi "<file dei brani da aggiungere>"`. Se per questa serata i file sono più di uno, mettili tutti dopo la stessa opzione, `--aggiuntivi "<primo file>" "<secondo file>"`, senza unirli a mano: lo script stampa una riga AGGIUNTIVI per ciascuno. Un elenco incollato salvalo prima in un file `.txt` nuovo, una riga per brano, nella forma `Artista - Titolo` o col solo titolo: non aggiungere righe a un file che esiste già.
 
 **Il file dei brani da aggiungere vale solo per la serata per cui il DJ te lo dà.** Per ogni nuova serata, anche nella stessa chat, fai di nuovo questa domanda così com'è, senza proporre il file della serata prima. Non riusare quel file, non unirlo al nuovo e non riprendere brani aggiunti in altre serate, in altre chat o dalla tua memoria: entrano solo i brani dell'export di questa serata e quelli del file che il DJ ti dà per questa serata.
 
-Di norma entrano tutte le righe del file. Se il DJ dice quali prendere, segui le sue istruzioni senza fare domande: se indica una colonna (per esempio «solo quelli con la X»), aggiungi `--solo-con "<nome della colonna>"`; per altre indicazioni crea una copia del file con le sole righe volute e usa quella. Non scegliere mai righe a caso o a rotazione: se te lo chiede, spiega che il borderò riguarda solo i brani eseguiti.
+Di norma entrano tutte le righe del file. Se il DJ dice quali prendere, segui le sue istruzioni senza fare domande: se indica una colonna (per esempio «solo quelli con la X»), aggiungi `--solo-con "<nome della colonna>"`, che vale per tutti i file della serata; se l'indicazione riguarda uno solo dei file, o per altre indicazioni, crea una copia del file con le sole righe volute e usa quella. Non scegliere mai righe a caso o a rotazione: se te lo chiede, spiega che il borderò riguarda solo i brani eseguiti.
 
 Poi lancia:
 
@@ -147,7 +147,7 @@ Se dopo la consegna il DJ dice che un brano è sbagliato, correggilo in `bozza.t
 Dai il file da scaricare con queste righe:
 - quanti brani contiene;
 - se hai usato lo storico: quanti brani sono stati confermati in automatico, che vanno controllati anche quelli, e quali sono stati tolti come deciso in passato;
-- se il DJ ha indicato il file dei brani da aggiungere: quanti ne hai aggiunti e che il borderò deve contenere solo i brani eseguiti, quindi se stasera uno di quelli non l'ha suonato lo deve togliere;
+- se il DJ ha indicato file di brani da aggiungere: quanti ne hai aggiunti da ciascun file e che il borderò deve contenere solo i brani eseguiti, quindi se stasera uno di quelli non l'ha suonato lo deve togliere;
 - se il file era un crate: che gli interpreti mancanti li hai dedotti dal titolo e che vanno controllati;
 - se hai cercato gli autori: per quanti brani li hai trovati, che vengono da MusicBrainz e che vanno controllati, perché possono essere incompleti o scritti con il nome d'arte;
 - sul portale dei borderò: crea la setlist, carica il CSV, controlla che i brani siano riconosciuti, associa la setlist al borderò e invia;

@@ -678,6 +678,8 @@ def aggiungi_brani(bozza: list[dict], path: Path, info: dict, memoria: dict | No
     if not righe:
         sys.exit(f"Nel file dei brani da aggiungere non ho trovato brani: {path.name}")
     aggiunti, gia_presenti, senza, visti = 0, 0, [], set()
+    # Con più file nella stessa serata la numerazione continua: A1, A2... restano univoche.
+    base = max((int(str(b["n"])[1:]) for b in bozza if re.fullmatch(r"A\d+", str(b["n"]))), default=0)
     for r in righe:
         titolo, artista = r["titolo"], r["artista"]
         if not artista and not (r["autore_file"] or r["compositore_file"]) and " - " in titolo:
@@ -701,18 +703,19 @@ def aggiungi_brani(bozza: list[dict], path: Path, info: dict, memoria: dict | No
             if bt == t and (not a or not ba or a in ba or ba in a):
                 uguale = b
                 break
-        if uguale is not None:  # già nell'export: una riga sola, con i dati del DJ
+        if uguale is not None:  # già nell'export o in un altro file: una riga sola, con i dati del DJ
             uguale.update({k: v for k, v in nuova.items() if v})
             uguale["controlla"] = "; ".join(x for x in (uguale["controlla"], nota) if x)
             gia_presenti += 1
             continue
         aggiunti += 1
-        bozza.append(dict(nuova, n=f"A{aggiunti}", controlla=nota))
-        info["origine"].append({"riga": f"A{aggiunti}", "titolo_file": titolo, "artista_file": artista, "parti": 1})
+        bozza.append(dict(nuova, n=f"A{base + aggiunti}", controlla=nota))
+        info["origine"].append({"riga": f"A{base + aggiunti}", "titolo_file": titolo, "artista_file": artista, "parti": 1})
         if not (nuova["performer"] or nuova["autore"] or nuova["compositore"]):
             senza.append(titolo)
     info["aggiuntivi"] = {"file": path.name, "aggiunti": aggiunti, "gia_presenti": gia_presenti, "senza": senza,
                           "selezione": selezione}
+    info.setdefault("aggiuntivi_tutti", []).append(info["aggiuntivi"])
 
 
 def scrivi_bozza(bozza: list[dict], out: Path) -> None:
@@ -1075,7 +1078,8 @@ def main():
     p1.add_argument("file")
     p1.add_argument("--out", default="bozza.tsv")
     p1.add_argument("--storico", help="memoria delle serate passate, se il DJ la vuole")
-    p1.add_argument("--aggiuntivi", help="Excel, CSV o elenco con i brani che il DJ vuole aggiungere sempre")
+    p1.add_argument("--aggiuntivi", nargs="+", action="extend", default=[],
+                    help="uno o più Excel, CSV o elenchi con i brani suonati che non sono nell'export")
     p1.add_argument("--solo-con", default="", help="colonna indicata dal DJ: entrano solo le righe dove è compilata")
     p2 = sub.add_parser("csv", help="scrive il CSV dalla bozza corretta")
     p2.add_argument("bozza")
@@ -1110,8 +1114,8 @@ def main():
             except ValueError as e:
                 print(f"STORICO ILLEGGIBILE ({e}): per questa serata lo ignoro.")
         bozza, info = prepara(Path(a.file), memoria)
-        if a.aggiuntivi:
-            aggiungi_brani(bozza, Path(a.aggiuntivi), info, memoria, a.solo_con)
+        for file_agg in dict.fromkeys(a.aggiuntivi):  # lo stesso file indicato due volte conta una volta
+            aggiungi_brani(bozza, Path(file_agg), info, memoria, a.solo_con)
         # Nuova bozza, nuova serata: le ricerche fatte per la bozza precedente non valgono più.
         for coda in ("_autori_cercati.txt", "_autori_saltati.txt"):
             Path(a.out).with_name(Path(a.out).stem + coda).unlink(missing_ok=True)
@@ -1119,12 +1123,11 @@ def main():
         scrivi_origine(info["origine"], Path(a.out))
         print(f"{info['file']} ({info['formato']}): {info['righe']} righe, {len(bozza)} opere in bozza, "
               f"{info['mashup']} mashup divisi, {len(info['doppioni'])} doppioni tolti.")
-        if a.aggiuntivi:
-            x = info["aggiuntivi"]
+        for x in info.get("aggiuntivi_tutti", []):
             print(f"AGGIUNTIVI: {x['aggiunti']} brani aggiunti da {x['file']}{x['selezione']}, "
-                  f"{x['gia_presenti']} erano già nell'export (una riga sola, con i dati del DJ).")
+                  f"{x['gia_presenti']} erano già nell'export o in un file precedente (una riga sola, con i dati del DJ).")
             if x["senza"]:
-                print(f"AGGIUNTIVI SENZA INTERPRETE: {'; '.join(x['senza'])}")
+                print(f"AGGIUNTIVI SENZA INTERPRETE ({x['file']}): {'; '.join(x['senza'])}")
         print(f"AMBIENTE: {ambiente()}.")
         if memoria is not None:
             print(f"STORICO: {len(memoria)} brani in memoria, {info['storico']} righe confermate in automatico, "
