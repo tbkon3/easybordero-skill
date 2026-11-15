@@ -1112,6 +1112,9 @@ def main():
         bozza, info = prepara(Path(a.file), memoria)
         if a.aggiuntivi:
             aggiungi_brani(bozza, Path(a.aggiuntivi), info, memoria, a.solo_con)
+        # Nuova bozza, nuova serata: le ricerche fatte per la bozza precedente non valgono più.
+        for coda in ("_autori_cercati.txt", "_autori_saltati.txt"):
+            Path(a.out).with_name(Path(a.out).stem + coda).unlink(missing_ok=True)
         scrivi_bozza(bozza, Path(a.out))
         scrivi_origine(info["origine"], Path(a.out))
         print(f"{info['file']} ({info['formato']}): {info['righe']} righe, {len(bozza)} opere in bozza, "

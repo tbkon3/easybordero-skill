@@ -9,12 +9,14 @@ Trasformi la cronologia di una serata in una bozza di CSV da caricare sul portal
 
 ## 1. Prepara la bozza
 
-Se il DJ non ha ancora allegato il file della serata, chiediglielo. Appena ce l'hai, prima di tutto il resto, chiedi con i pulsanti (salta la domanda solo se te l'ha già indicato lui):
+Se il DJ non ha ancora allegato il file della serata, chiediglielo. Appena ce l'hai, prima di tutto il resto, chiedi con i pulsanti (salta la domanda solo se insieme al file di questa serata ti ha già dato anche quello dei brani da aggiungere):
 
-«Hai anche un file Excel, un CSV o un elenco con brani da aggiungere sempre, che hai suonato ma non sono in questo export? Per esempio i dischi della preserata o quelli finiti in un altro crate.»
+«Hai anche un file Excel, un CSV o un elenco con altri brani che hai suonato in questa serata ma non sono in questo export? Per esempio i dischi della preserata o quelli finiti in un altro crate.»
 → «Sì, te lo allego» / «No»
 
-Se dice sì, aspetta il file e in ogni comando `prepara` aggiungi `--aggiuntivi "<file dei brani da aggiungere>"`. Un elenco incollato salvalo prima in un file `.txt`, una riga per brano, nella forma `Artista - Titolo` o col solo titolo.
+Se dice sì, aspetta il file e in ogni comando `prepara` di questa serata aggiungi `--aggiuntivi "<file dei brani da aggiungere>"`. Un elenco incollato salvalo prima in un file `.txt` nuovo, una riga per brano, nella forma `Artista - Titolo` o col solo titolo: non aggiungere righe a un file che esiste già.
+
+**Il file dei brani da aggiungere vale solo per la serata per cui il DJ te lo dà.** Per ogni nuova serata, anche nella stessa chat, fai di nuovo questa domanda così com'è, senza proporre il file della serata prima. Non riusare quel file, non unirlo al nuovo e non riprendere brani aggiunti in altre serate, in altre chat o dalla tua memoria: entrano solo i brani dell'export di questa serata e quelli del file che il DJ ti dà per questa serata.
 
 Di norma entrano tutte le righe del file. Se il DJ dice quali prendere, segui le sue istruzioni senza fare domande: se indica una colonna (per esempio «solo quelli con la X»), aggiungi `--solo-con "<nome della colonna>"`; per altre indicazioni crea una copia del file con le sole righe volute e usa quella. Non scegliere mai righe a caso o a rotazione: se te lo chiede, spiega che il borderò riguarda solo i brani eseguiti.
 
@@ -65,7 +67,7 @@ Se il DJ tiene lo storico e ti ha dato il file dei brani da aggiungere, chiedi c
 «Vuoi tenere nello storico anche i dati dei brani aggiunti dal tuo file (interpreti, autori, compositori)? Così la prossima volta non li cerco di nuovo online.»
 → «Sì, tienili» / «No»
 
-Lo storico conserva il legame tra il brano come è scritto nel file e i dati trovati: se in un upload successivo lo stesso brano arriva con pochi dettagli, i dati si riprendono da lì senza cercarli online.
+Lo storico conserva il legame tra il brano come è scritto nel file e i dati trovati: se in un upload successivo lo stesso brano arriva con pochi dettagli, i dati si riprendono da lì senza cercarli online. Lo storico non aggiunge mai brani: serve solo a riconoscere quelli che sono già nell'export o nel file aggiuntivo di questa serata.
 
 **Solo interpreti o anche autori.** Subito dopo, prima di correggere, fai questa domanda **con lo strumento delle domande a pulsanti** (in Claude è sempre disponibile: usalo). Metti nei pulsanti i minuti delle righe STIMA, per esempio con 154 brani:
 
